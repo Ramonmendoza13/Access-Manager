@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: accessmanager_db
+    environment:
+      POSTGRES_DB: accessdb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret123dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d accessdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    container_name: accessmanager_api
+    environment:
+      DB_USER: admin
+      DB_PASS: secret123dev
+      JWT_SECRET: clave-secreta-super-larga-de-al-menos-32-caracteres-ok
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/accessdb
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    container_name: accessmanager_web
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
