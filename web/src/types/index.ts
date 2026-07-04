@@ -1,3 +1,17 @@
+export interface ClubProfile {
+  id: number;
+  teamName: string;
+  venue: string;
+  capacity: number;
+  abonoBackgroundUrl: string | null;
+}
+
+export interface TicketTypeTemplate {
+  id: number;
+  name: string;
+  price: number;
+}
+
 export interface Event {
   id: number;
   name: string;
@@ -6,6 +20,7 @@ export interface Event {
   capacity: number;
   active: boolean;
   seasonPassEnabled: boolean;
+  entradaBackgroundUrl: string | null;
 }
 
 export interface EventStats {

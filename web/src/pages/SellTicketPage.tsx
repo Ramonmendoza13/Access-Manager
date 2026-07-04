@@ -113,7 +113,8 @@ function generateTicketCanvas(
   ticket: Ticket,
   qrBlobUrl: string,
   eventDate?: string,
-  eventVenue?: string
+  eventVenue?: string,
+  bgUrl?: string | null
 ): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
@@ -125,9 +126,7 @@ function generateTicketCanvas(
       return;
     }
 
-    const img = new Image();
-    img.src = qrBlobUrl;
-    img.onload = () => {
+    const drawAll = (qrImg: HTMLImageElement) => {
       // 1. Clip context to rounded card (radii of 24)
       ctx.save();
       drawRoundedRect(ctx, 2, 2, 596, 796, 24);
@@ -137,119 +136,149 @@ function generateTicketCanvas(
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, 600, 800);
 
-      // 3. Dark Header background (#1a1a2e)
-      ctx.fillStyle = '#1a1a2e';
-      ctx.fillRect(0, 0, 600, 160);
+      ctx.restore();
 
-      // Header Text: eventName
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 28px sans-serif';
-      ctx.textAlign = 'center';
-      wrapText(ctx, ticket.eventName, 300, 50, 520, 34);
-
-      // Header Text: date and venue
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '15px sans-serif';
-      const formattedDate = eventDate
-        ? new Date(eventDate).toLocaleDateString('es-ES', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })
-        : new Date(ticket.purchasedAt).toLocaleDateString('es-ES');
-      const venueStr = eventVenue || 'Recinto';
-      ctx.fillText(`${formattedDate}   |   ${venueStr}`, 300, 125);
-
-      ctx.restore(); // Restore clip context
-
-      // Card border stroke (light gray #e2e8f0)
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
+      // 2b. Optional background image at low opacity (drawn outside clip so it fills whole card area)
+      // We re-clip after
+      ctx.save();
       drawRoundedRect(ctx, 2, 2, 596, 796, 24);
-      ctx.stroke();
+      ctx.clip();
 
-      // 4. Center Section: QR Image (400x400) centered
-      ctx.drawImage(img, 100, 180, 400, 400);
+      const finishDrawing = () => {
+        // 3. Dark Header background (#1a1a2e)
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, 600, 160);
 
-      // 5. Lower Section details
-      ctx.textAlign = 'left';
+        // Header Text: eventName
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        wrapText(ctx, ticket.eventName, 300, 50, 520, 34);
 
-      // Line 1: Titular
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('Titular: ', 100, 610);
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '16px sans-serif';
-      ctx.fillText(ticket.holderName, 100 + ctx.measureText('Titular: ').width, 610);
+        // Header Text: date and venue
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '15px sans-serif';
+        const formattedDate = eventDate
+          ? new Date(eventDate).toLocaleDateString('es-ES', {
+              year: 'numeric',
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : new Date(ticket.purchasedAt).toLocaleDateString('es-ES');
+        const venueStr = eventVenue || 'Recinto';
+        ctx.fillText(`${formattedDate}   |   ${venueStr}`, 300, 125);
 
-      // Line 2: Email
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('Email: ', 100, 645);
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '16px sans-serif';
-      ctx.fillText(ticket.holderEmail, 100 + ctx.measureText('Email: ').width, 645);
+        ctx.restore(); // Restore clip context
 
-      // Line 3: Tipo + Badge
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('Tipo: ', 100, 680);
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '16px sans-serif';
-      ctx.fillText(ticket.ticketTypeName, 100 + ctx.measureText('Tipo: ').width, 680);
+        // Card border stroke (light gray #e2e8f0)
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        drawRoundedRect(ctx, 2, 2, 596, 796, 24);
+        ctx.stroke();
 
-      const typeLabelWidth = ctx.measureText('Tipo: ').width;
-      const typeValWidth = ctx.measureText(ticket.ticketTypeName).width;
-      const badgeX = 100 + typeLabelWidth + typeValWidth + 12;
-      const badgeY = 662;
-      const badgeText = ticket.isSeasonPass ? 'ABONO' : 'ENTRADA';
+        // 4. Center Section: QR Image (400x400) centered
+        ctx.drawImage(qrImg, 100, 180, 400, 400);
 
-      ctx.font = 'bold 11px sans-serif';
-      const badgeTextWidth = ctx.measureText(badgeText).width;
-      const badgeWidth = badgeTextWidth + 16;
-      const badgeHeight = 22;
-      ctx.fillStyle = ticket.isSeasonPass ? '#dbeafe' : '#d1fae5';
-      ctx.beginPath();
-      drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 5);
-      ctx.fill();
-      ctx.fillStyle = ticket.isSeasonPass ? '#1e40af' : '#065f46';
-      ctx.textAlign = 'center';
-      ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + 15);
+        // 5. Lower Section details
+        ctx.textAlign = 'left';
 
-      // Line 4: Precio
-      ctx.textAlign = 'left';
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('Precio: ', 100, 715);
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '16px sans-serif';
-      const priceStr = ticket.price !== undefined && ticket.price !== null ? `${Number(ticket.price).toFixed(2)} €` : 'N/A';
-      ctx.fillText(priceStr, 100 + ctx.measureText('Precio: ').width, 715);
+        // Line 1: Titular
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('Titular: ', 100, 610);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(ticket.holderName, 100 + ctx.measureText('Titular: ').width, 610);
 
-      // Line 5: ID
-      ctx.fillStyle = '#475569';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText('ID: ', 100, 750);
-      ctx.fillStyle = '#64748b';
-      ctx.font = '16px monospace';
-      const idStr = (ticket.qrCode || '').slice(0, 8).toUpperCase();
-      ctx.fillText(idStr, 100 + ctx.measureText('ID: ').width, 750);
+        // Line 2: Email
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('Email: ', 100, 645);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(ticket.holderEmail, 100 + ctx.measureText('Email: ').width, 645);
 
-      // 6. Footer: Access Manager
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#cbd5e1';
-      ctx.font = 'bold 14px sans-serif';
-      ctx.fillText('Access Manager', 300, 780);
+        // Line 3: Tipo + Badge
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('Tipo: ', 100, 680);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(ticket.ticketTypeName, 100 + ctx.measureText('Tipo: ').width, 680);
 
-      resolve(canvas);
+        const typeLabelWidth = ctx.measureText('Tipo: ').width;
+        const typeValWidth = ctx.measureText(ticket.ticketTypeName).width;
+        const badgeX = 100 + typeLabelWidth + typeValWidth + 12;
+        const badgeY = 662;
+        const badgeText = ticket.isSeasonPass ? 'ABONO' : 'ENTRADA';
+
+        ctx.font = 'bold 11px sans-serif';
+        const badgeTextWidth = ctx.measureText(badgeText).width;
+        const badgeWidth = badgeTextWidth + 16;
+        const badgeHeight = 22;
+        ctx.fillStyle = ticket.isSeasonPass ? '#dbeafe' : '#d1fae5';
+        ctx.beginPath();
+        drawRoundedRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 5);
+        ctx.fill();
+        ctx.fillStyle = ticket.isSeasonPass ? '#1e40af' : '#065f46';
+        ctx.textAlign = 'center';
+        ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + 15);
+
+        // Line 4: Precio
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('Precio: ', 100, 715);
+        ctx.fillStyle = '#1e293b';
+        ctx.font = '16px sans-serif';
+        const priceStr = ticket.price !== undefined && ticket.price !== null ? `${Number(ticket.price).toFixed(2)} €` : 'N/A';
+        ctx.fillText(priceStr, 100 + ctx.measureText('Precio: ').width, 715);
+
+        // Line 5: ID
+        ctx.fillStyle = '#475569';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.fillText('ID: ', 100, 750);
+        ctx.fillStyle = '#64748b';
+        ctx.font = '16px monospace';
+        const idStr = (ticket.qrCode || '').slice(0, 8).toUpperCase();
+        ctx.fillText(idStr, 100 + ctx.measureText('ID: ').width, 750);
+
+        // 6. Footer: Access Manager
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText('Access Manager', 300, 780);
+
+        resolve(canvas);
+      };
+
+      if (bgUrl) {
+        const bgImg = new Image();
+        bgImg.crossOrigin = 'anonymous';
+        bgImg.src = bgUrl;
+        bgImg.onload = () => {
+          // Draw background at 0.15 opacity
+          ctx.globalAlpha = 0.15;
+          ctx.drawImage(bgImg, 0, 0, 600, 800);
+          ctx.globalAlpha = 1.0;
+          finishDrawing();
+        };
+        bgImg.onerror = () => {
+          // Silently skip background if it fails to load
+          finishDrawing();
+        };
+      } else {
+        finishDrawing();
+      }
     };
 
-    img.onerror = (err) => {
-      reject(err);
-    };
+    const img = new Image();
+    img.src = qrBlobUrl;
+    img.onload = () => drawAll(img);
+    img.onerror = (err) => reject(err);
   });
 }
 
@@ -315,31 +344,41 @@ export default function SellTicketPage() {
 
     let active = true;
     let canvasUrl: string | null = null;
+    let bgObjectUrl: string | null = null;
 
-    generateTicketCanvas(
-      soldTicket,
-      qrBlobUrl,
-      activeEvent?.date,
-      activeEvent?.venue
-    )
-      .then((canvas) => {
-        if (!active) return;
-        canvas.toBlob((blob) => {
-          if (blob && active) {
-            canvasUrl = URL.createObjectURL(blob);
-            setTicketCanvasUrl(canvasUrl);
-          }
-        }, 'image/png');
-      })
-      .catch((err) => {
-        console.error('Error generating ticket canvas:', err);
-      });
+    const run = async () => {
+      // Use the Cloudinary URL from the event if available
+      const bgUrl: string | null = activeEvent?.entradaBackgroundUrl ?? null;
+
+      if (!active) return;
+
+      generateTicketCanvas(
+        soldTicket,
+        qrBlobUrl,
+        activeEvent?.date,
+        activeEvent?.venue,
+        bgUrl
+      )
+        .then((canvas) => {
+          if (!active) return;
+          canvas.toBlob((blob) => {
+            if (blob && active) {
+              canvasUrl = URL.createObjectURL(blob);
+              setTicketCanvasUrl(canvasUrl);
+            }
+          }, 'image/png');
+        })
+        .catch((err) => {
+          console.error('Error generating ticket canvas:', err);
+        });
+    };
+
+    run();
 
     return () => {
       active = false;
-      if (canvasUrl) {
-        URL.revokeObjectURL(canvasUrl);
-      }
+      if (canvasUrl) URL.revokeObjectURL(canvasUrl);
+      if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
     };
   }, [qrBlobUrl, soldTicket, activeEvent]);
 

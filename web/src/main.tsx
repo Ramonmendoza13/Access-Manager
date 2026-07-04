@@ -15,6 +15,7 @@ import EventsPage from './pages/EventsPage';
 import SellTicketPage from './pages/SellTicketPage';
 import AccessLogsPage from './pages/AccessLogsPage';
 import AbonadosPage from './pages/AbonadosPage';
+import ProfilePage from './pages/ProfilePage';
 
 // Initialize React Query Client
 const queryClient = new QueryClient({
@@ -61,6 +62,10 @@ const router = createBrowserRouter([
           {
             path: 'logs',
             element: <AccessLogsPage />,
+          },
+          {
+            path: 'perfil',
+            element: <ProfilePage />,
           },
         ],
       },

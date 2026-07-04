@@ -43,6 +43,10 @@ public class SecurityConfig {
                         .requestMatchers("/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                         // Access scan route
                         .requestMatchers(HttpMethod.POST, "/api/access/scan").hasAnyRole("ADMIN", "SCANNER")
+                        // Profile & ticket-template reads — any authenticated user
+                        .requestMatchers(HttpMethod.GET, "/api/profile/**").authenticated()
+                        // Event entrada-background reads — any authenticated user
+                        .requestMatchers(HttpMethod.GET, "/api/events/*/entrada-background").authenticated()
                         // Everything else
                         .anyRequest().hasAnyRole("ADMIN")
                 )

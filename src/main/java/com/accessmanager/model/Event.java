@@ -42,6 +42,9 @@ public class Event {
     @Column(name = "season_pass_enabled", nullable = false, columnDefinition = "boolean default false")
     private Boolean seasonPassEnabled = false;
 
+    @Column(nullable = true)
+    private String entradaBackgroundUrl;
+
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<TicketType> ticketTypes;
 }

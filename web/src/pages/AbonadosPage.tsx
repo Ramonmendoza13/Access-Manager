@@ -8,6 +8,7 @@ import {
   deactivateAbonado,
 } from '../api/abonados';
 import { getAbonoTypes, createAbonoType, deactivateAbonoType } from '../api/abonoTypes';
+import { getProfile } from '../api/profile';
 import type { AbonadoEntry, AbonoType } from '../types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -173,6 +174,11 @@ export default function AbonadosPage() {
     queryFn: getAbonados,
   });
 
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: getProfile,
+  });
+
   // ── Mutations ──────────────────────────────────────────────────────────────
   const togglePassMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => toggleSeasonPass(id, enabled),
@@ -276,7 +282,7 @@ export default function AbonadosPage() {
     setAbTypeId('');
   };
 
-  const downloadCarnet = () => {
+  const downloadCarnet = async () => {
     if (!newAbonado || !newAbonadoQrUrl) return;
 
     const canvas = document.createElement('canvas');
@@ -284,9 +290,30 @@ export default function AbonadosPage() {
     canvas.height = 800;
     const ctx = canvas.getContext('2d')!;
 
-    // 1. Fondo oscuro
-    ctx.fillStyle = '#0f172a'; // slate-900
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const drawBackground = () => new Promise<void>((resolve) => {
+      if (profile?.abonoBackgroundUrl) {
+        const imgBg = new Image();
+        imgBg.crossOrigin = 'anonymous';
+        imgBg.onload = () => {
+          ctx.drawImage(imgBg, 0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.7)'; // Overlay for readability
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          resolve();
+        };
+        imgBg.onerror = () => {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          resolve();
+        };
+        imgBg.src = profile.abonoBackgroundUrl;
+      } else {
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        resolve();
+      }
+    });
+
+    await drawBackground();
 
     // Borde interno sutil
     ctx.strokeStyle = '#334155'; // slate-700

@@ -1,8 +1,20 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getEvents, activateEvent, createEvent, toggleSeasonPass } from '../api/events';
+import {
+  getEvents,
+  activateEvent,
+  deactivateEvent,
+  createEvent,
+  toggleSeasonPass,
+  updateEvent,
+  uploadEntradaBackground,
+  deleteEntradaBackground,
+} from '../api/events';
+import { getProfile } from '../api/profile';
+import { getTemplates } from '../api/ticketTemplates';
 import { getTicketTypesByEvent, createTicketType } from '../api/tickets';
 import type { Event, TicketType } from '../types';
+import DateTimePicker from '../components/ui/DateTimePicker';
 
 // ─── Ticket Type Row Input ────────────────────────────────────────────────────
 interface TicketTypeInput {
@@ -52,6 +64,118 @@ function EventTicketTypesBadges({ eventId }: { eventId: number }) {
   );
 }
 
+// ─── Edit icon ────────────────────────────────────────────────────────────────
+const EditIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+    />
+  </svg>
+);
+
+// ─── Image field ──────────────────────────────────────────────────────────────
+function EntradaImageField({
+  file,
+  previewUrl,
+  onChange,
+  onDelete,
+}: {
+  file: File | null;
+  previewUrl?: string | null;
+  onChange: (f: File | null) => void;
+  onDelete?: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  
+  const displaySrc = file ? URL.createObjectURL(file) : previewUrl;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">
+        Imagen de fondo para las entradas{' '}
+        <span className="normal-case text-slate-600 font-normal">(opcional)</span>
+      </label>
+      <div className="flex flex-col sm:flex-row gap-4 items-start mb-2">
+        <div className="shrink-0">
+          {displaySrc ? (
+            <div className="relative group w-40 h-24 rounded-xl overflow-hidden border border-slate-700/60 shadow-lg">
+              <img
+                src={displaySrc}
+                alt="Fondo entrada"
+                className="w-full h-full object-cover"
+              />
+              {file && (
+                <div className="absolute top-1 right-1 px-2 py-0.5 bg-amber-500/90 rounded-full text-[10px] font-bold text-white uppercase tracking-wider">
+                  Pendiente
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-40 h-24 rounded-xl border-2 border-dashed border-slate-700/60 flex flex-col items-center justify-center gap-1.5 text-slate-600">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+              <span className="text-[10px]">Sin imagen</span>
+            </div>
+          )}
+        </div>
+        
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <input
+              ref={ref}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+            />
+            <button
+              type="button"
+              onClick={() => ref.current?.click()}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium transition-all"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Seleccionar imagen
+            </button>
+            {file && (
+              <button
+                type="button"
+                onClick={() => { onChange(null); if (ref.current) ref.current.value = ''; }}
+                className="text-slate-600 hover:text-rose-400 transition-colors"
+                title="Quitar imagen"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {file && (
+            <p className="text-xs text-slate-600">
+              {(file.size / 1024).toFixed(0)} KB (Pendiente)
+            </p>
+          )}
+          {previewUrl && !file && onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              className="mt-1 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 hover:border-rose-500/50 text-xs font-semibold transition-all w-fit"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Eliminar imagen actual
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function EventsPage() {
   const queryClient = useQueryClient();
@@ -87,6 +211,19 @@ export default function EventsPage() {
     },
   });
 
+  const deactivateMutation = useMutation({
+    mutationFn: deactivateEvent,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['activeEvent'] });
+      showToast(`Evento "${data.name}" desactivado`, 'success');
+    },
+    onError: (err: unknown) => {
+      const errMsg = (err as any)?.response?.data?.error || (err as Error).message || 'Error al desactivar el evento';
+      showToast(errMsg, 'error');
+    },
+  });
+
   const seasonPassMutation = useMutation({
     mutationFn: ({ eventId, enabled }: { eventId: number; enabled: boolean }) =>
       toggleSeasonPass(eventId, enabled),
@@ -104,16 +241,36 @@ export default function EventsPage() {
     },
   });
 
-  // Form state
+  const deleteBgMutation = useMutation({
+    mutationFn: deleteEntradaBackground,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      setEntradaPreviewUrl(null);
+      showToast('Imagen de fondo eliminada', 'success');
+    },
+    onError: () => showToast('Error al eliminar imagen', 'error'),
+  });
+
+  // ── Form state ─────────────────────────────────────────────────────────────
   const [isFormOpen, setIsFormOpen] = useState(false);
+  /** null = crear nuevo | number = id del evento a editar */
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
+
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [venue, setVenue] = useState('');
   const [capacity, setCapacity] = useState<number | ''>('');
-  const [isCreating, setIsCreating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [ticketTypeRows, setTicketTypeRows] = useState<TicketTypeInput[]>([
     { name: '', price: '', quota: '' },
   ]);
+  const [entradaFile, setEntradaFile] = useState<File | null>(null);
+  const [entradaPreviewUrl, setEntradaPreviewUrl] = useState<string | null>(null);
+
+  // Ref for name input (to position cursor)
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const isEditMode = editingEventId !== null;
 
   const resetForm = () => {
     setName('');
@@ -121,6 +278,9 @@ export default function EventsPage() {
     setVenue('');
     setCapacity('');
     setTicketTypeRows([{ name: '', price: '', quota: '' }]);
+    setEntradaFile(null);
+    setEntradaPreviewUrl(null);
+    setEditingEventId(null);
   };
 
   const closeForm = () => {
@@ -128,16 +288,110 @@ export default function EventsPage() {
     setIsFormOpen(false);
   };
 
-  const addRow = () => setTicketTypeRows((prev) => [...prev, { name: '', price: '', quota: '' }]);
+  // ── Open NEW form: autofill from profile + templates ──────────────────────
+  const openNewForm = async () => {
+    resetForm();
+    setIsFormOpen(true);
 
+    try {
+      const [profile, templates] = await Promise.all([
+        getProfile(),
+        getTemplates(),
+      ]);
+
+      if (profile) {
+        const prefixedName = `${profile.teamName} - `;
+        setName(prefixedName);
+        setVenue(profile.venue);
+        setCapacity(profile.capacity);
+        // Position cursor at end after render
+        setTimeout(() => {
+          if (nameInputRef.current) {
+            nameInputRef.current.focus();
+            const len = nameInputRef.current.value.length;
+            nameInputRef.current.setSelectionRange(len, len);
+          }
+        }, 50);
+      }
+
+      if (templates && templates.length > 0) {
+        setTicketTypeRows(
+          templates.map((t) => ({
+            name: t.name,
+            price: String(t.price),
+            quota: '', // user must fill quota
+          }))
+        );
+      }
+    } catch {
+      // Silently ignore — form stays empty like before
+    }
+  };
+
+  // ── Open EDIT form: prefill from existing event ───────────────────────────
+  const openEditForm = (event: Event) => {
+    resetForm();
+    setEditingEventId(event.id);
+
+    setName(event.name);
+    setDate(event.date); // Event date is an ISO string like "2026-10-15T20:30:00"
+    setVenue(event.venue);
+    setCapacity(event.capacity);
+    setEntradaPreviewUrl(event.entradaBackgroundUrl);
+
+    setIsFormOpen(true);
+  };
+
+  const addRow = () => setTicketTypeRows((prev) => [...prev, { name: '', price: '', quota: '' }]);
   const removeRow = (index: number) =>
     setTicketTypeRows((prev) => prev.filter((_, i) => i !== index));
-
   const updateRow = (index: number, field: keyof TicketTypeInput, value: string) =>
     setTicketTypeRows((prev) =>
       prev.map((row, i) => (i === index ? { ...row, [field]: value } : row))
     );
 
+  // ── Edit submit ───────────────────────────────────────────────────────────
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !date || !venue.trim() || capacity === '') {
+      showToast('Por favor, completa todos los campos del evento', 'error');
+      return;
+    }
+    const capVal = Number(capacity);
+    if (isNaN(capVal) || capVal <= 0) {
+      showToast('El aforo debe ser un número positivo', 'error');
+      return;
+    }
+    if (new Date(date) <= new Date()) {
+      showToast('La fecha del evento debe ser en el futuro', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await updateEvent(editingEventId!, {
+        name: name.trim(),
+        date: date,
+        venue: venue.trim(),
+        capacity: capVal,
+      });
+
+      if (entradaFile) {
+        await uploadEntradaBackground(editingEventId!, entradaFile);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      showToast(`Evento actualizado correctamente`, 'success');
+      closeForm();
+    } catch (err: unknown) {
+      const errMsg = (err as any)?.response?.data?.error || (err as Error).message || 'Error al actualizar el evento';
+      showToast(errMsg, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Create submit ──────────────────────────────────────────────────────────
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -173,11 +427,11 @@ export default function EventsPage() {
       }
     }
 
-    setIsCreating(true);
+    setIsSubmitting(true);
     try {
       const newEvent = await createEvent({
         name: name.trim(),
-        date: date + ':00',
+        date: date,
         venue: venue.trim(),
         capacity: capVal,
       });
@@ -194,8 +448,17 @@ export default function EventsPage() {
           const ttErrMsg = (ttErr as any)?.response?.data?.error || (ttErr as Error).message || 'Error desconocido';
           showToast(`Error al crear el tipo "${row.name}": ${ttErrMsg}`, 'error');
           queryClient.invalidateQueries({ queryKey: ['events'] });
-          setIsCreating(false);
+          setIsSubmitting(false);
           return;
+        }
+      }
+
+      // Upload background if selected
+      if (entradaFile) {
+        try {
+          await uploadEntradaBackground(newEvent.id, entradaFile);
+        } catch {
+          showToast('Evento creado pero hubo un error al subir la imagen de fondo', 'error');
         }
       }
 
@@ -206,9 +469,11 @@ export default function EventsPage() {
       const errMsg = (err as any)?.response?.data?.error || (err as Error).message || 'Error al crear el evento';
       showToast(errMsg, 'error');
     } finally {
-      setIsCreating(false);
+      setIsSubmitting(false);
     }
   };
+
+  const handleSubmit = isEditMode ? handleEditSubmit : handleCreateSubmit;
 
   return (
     <div className="space-y-8 relative">
@@ -231,7 +496,7 @@ export default function EventsPage() {
         </div>
         {!isFormOpen && (
           <button
-            onClick={() => setIsFormOpen(true)}
+            onClick={openNewForm}
             className="px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all duration-200 shadow-lg shadow-violet-600/20"
           >
             + Nuevo Evento
@@ -239,83 +504,200 @@ export default function EventsPage() {
         )}
       </div>
 
+      {/* ── Form (create + edit) ──────────────────────────────────────────── */}
       {isFormOpen && (
-        <form onSubmit={handleCreateSubmit} className="glass p-6 rounded-2xl border border-slate-800 flex flex-col gap-6 shadow-xl">
-          <h3 className="text-lg font-bold text-white">Nuevo Evento</h3>
+        <form onSubmit={handleSubmit} className="glass p-6 rounded-2xl border border-slate-800 flex flex-col gap-6 shadow-xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white">
+              {isEditMode ? (
+                <span className="flex items-center gap-2">
+                  <EditIcon />
+                  Editar Evento
+                </span>
+              ) : (
+                'Nuevo Evento'
+              )}
+            </h3>
+            {isEditMode && (
+              <span className="text-xs text-slate-500 bg-slate-800/60 border border-slate-700/40 px-2.5 py-1 rounded-full">
+                ID #{editingEventId}
+              </span>
+            )}
+          </div>
 
-          {/* PARTE A */}
+          {/* PARTE A: Datos del evento */}
           <div>
-            <p className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-3">A — Datos del evento</p>
+            <p className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-3">
+              A — Datos del evento
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Nombre del Evento *</label>
-                <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Concierto Rock Festival" className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all" />
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Ej: Betis - Sevilla"
+                  className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+                />
               </div>
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Fecha y Hora *</label>
-                <input type="datetime-local" required value={date} onChange={(e) => setDate(e.target.value)} className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 focus:outline-none focus:border-violet-500/50 transition-all" />
+                <DateTimePicker
+                  label="Fecha y Hora"
+                  required
+                  value={date}
+                  onChange={(iso) => setDate(iso)}
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Lugar / Venue *</label>
-                <input type="text" required value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Ej: Estadio Nacional" className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all" />
+                <input
+                  type="text"
+                  required
+                  value={venue}
+                  onChange={(e) => setVenue(e.target.value)}
+                  placeholder="Ej: Estadio Benito Villamarín"
+                  className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+                />
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Aforo Máximo *</label>
-                <input type="number" required min="1" value={capacity} onChange={(e) => setCapacity(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Ej: 5000" className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all" />
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="Ej: 60000"
+                  className="px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+                />
               </div>
             </div>
           </div>
 
-          {/* PARTE B */}
+          {/* PARTE B: Tipos de entrada — solo en modo creación */}
+          {!isEditMode && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold text-violet-400 uppercase tracking-widest">B — Tipos de entrada</p>
+                <button
+                  type="button"
+                  onClick={addRow}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-violet-400 border border-violet-600/30 bg-violet-600/10 hover:bg-violet-600/20 transition-all"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                  Añadir tipo
+                </button>
+              </div>
+              <div className="grid grid-cols-[1fr_120px_100px_36px] gap-2 mb-1.5 px-1">
+                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Nombre del tipo</span>
+                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Precio €</span>
+                <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Cuota</span>
+                <span />
+              </div>
+              <div className="flex flex-col gap-2">
+                {ticketTypeRows.map((row, index) => (
+                  <div key={index} className="grid grid-cols-[1fr_120px_100px_36px] gap-2 items-center">
+                    <input
+                      type="text"
+                      value={row.name}
+                      onChange={(e) => updateRow(index, 'name', e.target.value)}
+                      placeholder="Ej: VIP, General..."
+                      className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500/50 transition-all"
+                    />
+                    <input
+                      type="number"
+                      value={row.price}
+                      min="0"
+                      step="0.01"
+                      onChange={(e) => updateRow(index, 'price', e.target.value)}
+                      placeholder="0.00"
+                      className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500/50 transition-all"
+                    />
+                    <input
+                      type="number"
+                      value={row.quota}
+                      min="1"
+                      step="1"
+                      onChange={(e) => updateRow(index, 'quota', e.target.value)}
+                      placeholder="100"
+                      className={`px-3 py-2 rounded-lg border text-sm focus:outline-none focus:border-violet-500/50 transition-all ${
+                        row.price !== '' && row.quota === ''
+                          ? 'bg-amber-500/10 border-amber-500/30 text-slate-200 placeholder-amber-600/60'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-200 placeholder-slate-500'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeRow(index)}
+                      disabled={ticketTypeRows.length <= 1}
+                      title="Eliminar fila"
+                      className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {ticketTypeRows.some((r) => r.price !== '' && r.quota === '') && (
+                <p className="text-xs text-amber-500/80 mt-2 pl-1 flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Rellena la cuota de los tipos prellenados desde plantillas
+                </p>
+              )}
+              <p className="text-xs text-slate-600 mt-2 pl-1">
+                {ticketTypeRows.length} tipo{ticketTypeRows.length !== 1 ? 's' : ''} de entrada definido{ticketTypeRows.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+          )}
+
+          {/* PARTE C: Imagen de fondo */}
           <div>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold text-violet-400 uppercase tracking-widest">B — Tipos de entrada</p>
-              <button type="button" onClick={addRow} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-violet-400 border border-violet-600/30 bg-violet-600/10 hover:bg-violet-600/20 transition-all">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                Añadir tipo
-              </button>
-            </div>
-            <div className="grid grid-cols-[1fr_120px_100px_36px] gap-2 mb-1.5 px-1">
-              <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Nombre del tipo</span>
-              <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Precio €</span>
-              <span className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Cuota</span>
-              <span />
-            </div>
-            <div className="flex flex-col gap-2">
-              {ticketTypeRows.map((row, index) => (
-                <div key={index} className="grid grid-cols-[1fr_120px_100px_36px] gap-2 items-center">
-                  <input type="text" value={row.name} onChange={(e) => updateRow(index, 'name', e.target.value)} placeholder="Ej: VIP, General..." className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500/50 transition-all" />
-                  <input type="number" value={row.price} min="0" step="0.01" onChange={(e) => updateRow(index, 'price', e.target.value)} placeholder="0.00" className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500/50 transition-all" />
-                  <input type="number" value={row.quota} min="1" step="1" onChange={(e) => updateRow(index, 'quota', e.target.value)} placeholder="100" className="px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500/50 transition-all" />
-                  <button type="button" onClick={() => removeRow(index)} disabled={ticketTypeRows.length <= 1} title="Eliminar fila" className="flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition-all disabled:opacity-20 disabled:cursor-not-allowed">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-600 mt-2 pl-1">
-              {ticketTypeRows.length} tipo{ticketTypeRows.length !== 1 ? 's' : ''} de entrada definido{ticketTypeRows.length !== 1 ? 's' : ''}
+            <p className="text-xs font-bold text-violet-400 uppercase tracking-widest mb-3">
+              {isEditMode ? 'B' : 'C'} — Imagen de fondo para las entradas
             </p>
+            <EntradaImageField 
+              file={entradaFile} 
+              previewUrl={entradaPreviewUrl} 
+              onChange={setEntradaFile} 
+              onDelete={editingEventId && entradaPreviewUrl ? () => {
+                if (window.confirm('¿Seguro que quieres eliminar la imagen de fondo?')) {
+                  deleteBgMutation.mutate(editingEventId);
+                }
+              } : undefined}
+            />
           </div>
 
           <div className="flex justify-end gap-3 border-t border-slate-900 pt-4">
-            <button type="button" onClick={closeForm} disabled={isCreating} className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:bg-slate-800 transition-colors disabled:opacity-50">
+            <button
+              type="button"
+              onClick={closeForm}
+              disabled={isSubmitting}
+              className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-400 hover:bg-slate-800 transition-colors disabled:opacity-50"
+            >
               Cancelar
             </button>
-            <button type="submit" disabled={isCreating} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all shadow-md shadow-violet-600/10 disabled:opacity-50">
-              {isCreating ? (
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-sm transition-all shadow-md shadow-violet-600/10 disabled:opacity-50"
+            >
+              {isSubmitting ? (
                 <>
                   <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Creando...
+                  {isEditMode ? 'Guardando...' : 'Creando...'}
                 </>
               ) : (
-                'Crear evento'
+                isEditMode ? 'Guardar cambios' : 'Crear evento'
               )}
             </button>
           </div>
         </form>
       )}
 
+      {/* ── Events table ──────────────────────────────────────────────────── */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin border-4 border-violet-500 rounded-full h-8 w-8 border-t-transparent" />
@@ -370,24 +752,55 @@ export default function EventsPage() {
                     <td className="px-6 py-4 text-center">
                       {event.active ? (
                         <label className={`relative inline-flex items-center cursor-pointer ${seasonPassMutation.isPending ? 'opacity-50 cursor-not-allowed' : ''}`} title="Activar para que los abonos sean válidos en este evento">
-                          <input type="checkbox" checked={event.seasonPassEnabled} disabled={seasonPassMutation.isPending} onChange={() => seasonPassMutation.mutate({ eventId: event.id, enabled: !event.seasonPassEnabled })} className="sr-only peer" />
+                          <input
+                            type="checkbox"
+                            checked={event.seasonPassEnabled}
+                            disabled={seasonPassMutation.isPending}
+                            onChange={() => seasonPassMutation.mutate({ eventId: event.id, enabled: !event.seasonPassEnabled })}
+                            className="sr-only peer"
+                          />
                           <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-600" />
                         </label>
                       ) : (
                         <span className="text-slate-600" title="Solo disponible en eventos activos">—</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      {!event.active ? (
-                        <button onClick={() => activateMutation.mutate(event.id)} disabled={activateMutation.isPending} className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-all duration-200 shadow-md shadow-violet-600/10 hover:shadow-violet-600/20 disabled:opacity-50">
-                          {activateMutation.isPending && activateMutation.variables === event.id ? 'Activando...' : 'Activar'}
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Edit button — always visible */}
+                        <button
+                          onClick={() => openEditForm(event)}
+                          disabled={isFormOpen}
+                          title="Editar evento"
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-violet-300 hover:bg-violet-500/10 border border-transparent hover:border-violet-500/20 transition-all duration-200 text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <EditIcon />
+                          <span>Editar</span>
                         </button>
-                      ) : (
-                        <span className="text-emerald-400 font-bold text-xs flex items-center justify-end gap-1.5">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" /></svg>
-                          Activo
-                        </span>
-                      )}
+
+                        {/* Activate / Deactivate button */}
+                        {!event.active ? (
+                          <button
+                            onClick={() => activateMutation.mutate(event.id)}
+                            disabled={activateMutation.isPending}
+                            className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition-all duration-200 shadow-md shadow-violet-600/10 hover:shadow-violet-600/20 disabled:opacity-50"
+                          >
+                            {activateMutation.isPending && activateMutation.variables === event.id ? 'Activando...' : 'Activar'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('¿Seguro que quieres desactivar este evento? Los escaneos dejarán de funcionar hasta que actives otro evento.')) {
+                                deactivateMutation.mutate(event.id);
+                              }
+                            }}
+                            disabled={deactivateMutation.isPending}
+                            className="px-3.5 py-1.5 rounded-lg bg-transparent border border-rose-500/40 text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/60 font-semibold text-xs transition-all duration-200 disabled:opacity-50"
+                          >
+                            {deactivateMutation.isPending && deactivateMutation.variables === event.id ? 'Desactivando...' : 'Desactivar'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

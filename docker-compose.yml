@@ -24,6 +24,9 @@ services:
       DB_PASS: secret123dev
       JWT_SECRET: clave-secreta-super-larga-de-al-menos-32-caracteres-ok
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/accessdb
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
     ports:
       - "8080:8080"
     depends_on:

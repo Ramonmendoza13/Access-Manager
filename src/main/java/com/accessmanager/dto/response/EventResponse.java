@@ -9,5 +9,6 @@ public record EventResponse(
         String venue,
         Integer capacity,
         Boolean active,
-        Boolean seasonPassEnabled
+        Boolean seasonPassEnabled,
+        String entradaBackgroundUrl
 ) {}
