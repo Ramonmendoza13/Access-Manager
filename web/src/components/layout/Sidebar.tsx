@@ -1,5 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/authStore';
+import { getProfile } from '../../api/profile';
 
 const DashboardIcon = () => (
   <svg className="w-5 h-5 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -48,14 +50,25 @@ export default function Sidebar() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
 
-  const navItems = [
-    { name: 'Dashboard', path: '/dashboard', icon: DashboardIcon },
-    { name: 'Perfil del club', path: '/perfil', icon: ProfileIcon },
-    { name: 'Events', path: '/events', icon: EventsIcon },
-    { name: 'Abonados', path: '/abonados', icon: AbonadosIcon },
-    { name: 'Sell Ticket', path: '/sell', icon: SellIcon },
-    { name: 'Access Logs', path: '/logs', icon: LogsIcon },
+  // Use the cached profile query (stale data is fine for nav filtering)
+  const { data: profile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: getProfile,
+    staleTime: 60000,
+  });
+
+  const isSwimmingPool = profile?.systemType === 'SWIMMING_POOL';
+
+  const allNavItems = [
+    { name: 'Dashboard',     path: '/dashboard', icon: DashboardIcon, hideInPool: false },
+    { name: 'Perfil del club', path: '/perfil',  icon: ProfileIcon,   hideInPool: false },
+    { name: 'Events',        path: '/events',    icon: EventsIcon,    hideInPool: true  },
+    { name: 'Abonados',      path: '/abonados',  icon: AbonadosIcon,  hideInPool: false },
+    { name: 'Sell Ticket',   path: '/sell',      icon: SellIcon,      hideInPool: false },
+    { name: 'Access Logs',   path: '/logs',      icon: LogsIcon,      hideInPool: false },
   ];
+
+  const navItems = allNavItems.filter((item) => !(isSwimmingPool && item.hideInPool));
 
   return (
     <aside className="w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-6 shrink-0">

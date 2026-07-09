@@ -1,6 +1,7 @@
 package com.accessmanager.dto.response;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public record TicketResponse(
@@ -14,6 +15,7 @@ public record TicketResponse(
         BigDecimal price,
         Boolean isSeasonPass,
         String eventName,
-        Long eventId
+        Long eventId,
+        LocalDate targetDate
 ) {
 }

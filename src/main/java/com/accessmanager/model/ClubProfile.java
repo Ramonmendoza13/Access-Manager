@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -29,4 +31,13 @@ public class ClubProfile {
 
     @Column(nullable = true)
     private String abonoBackgroundUrl;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SystemType systemType = SystemType.FOOTBALL;
+
+    private LocalDate seasonStartDate;
+
+    private LocalDate seasonEndDate;
 }

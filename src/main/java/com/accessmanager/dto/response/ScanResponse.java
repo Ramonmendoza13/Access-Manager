@@ -15,11 +15,19 @@ public record ScanResponse(
 ) {
 
     public static ScanResponse allowedTicket(Ticket ticket) {
+        String typeName;
+        if (ticket.getTicketType() != null) {
+            typeName = ticket.getTicketType().getName();
+        } else if (ticket.getTicketTypeTemplate() != null) {
+            typeName = ticket.getTicketTypeTemplate().getName();
+        } else {
+            typeName = "Entrada";
+        }
         return new ScanResponse(
                 true,
                 "Acceso concedido",
                 ticket.getHolderName(),
-                ticket.getTicketType().getName(),
+                typeName,
                 false,
                 LocalDateTime.now()
         );

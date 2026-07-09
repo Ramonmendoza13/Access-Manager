@@ -29,6 +29,12 @@ interface ActiveEvent {
   seasonPassEnabled: boolean;
 }
 
+interface ClubProfile {
+  systemType: 'FOOTBALL' | 'SWIMMING_POOL';
+  seasonStartDate: string | null;
+  seasonEndDate: string | null;
+}
+
 function generateDeviceId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -118,6 +124,7 @@ export default function ScannerScreen() {
   const [scanning, setScanning] = useState(true);
   const [result, setResult] = useState<ScanResponse | null>(null);
   const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
+  const [profile, setProfile] = useState<ClubProfile | null>(null);
 
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -141,14 +148,44 @@ export default function ScannerScreen() {
       }
     };
 
+    const fetchProfile = async () => {
+      try {
+        const response = await apiClient.get<ClubProfile>('/api/profile');
+        if (isMounted && response.data) {
+          setProfile(response.data);
+        }
+      } catch (err) {
+        console.warn('Error fetching profile:', err);
+      }
+    };
+
     fetchActiveEvent();
-    const interval = setInterval(fetchActiveEvent, 30000);
+    fetchProfile();
+    const interval = setInterval(() => {
+      fetchActiveEvent();
+      fetchProfile();
+    }, 30000);
 
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
   }, []);
+
+  const getPoolStatus = () => {
+    if (!profile || !profile.seasonStartDate || !profile.seasonEndDate) return null;
+    const today = new Date().toISOString().split('T')[0];
+    const inSeason = today >= profile.seasonStartDate && today <= profile.seasonEndDate;
+    return {
+      inSeason,
+      text: inSeason
+        ? `🏊 Temporada activa\n${profile.seasonStartDate} al ${profile.seasonEndDate}`
+        : '❌ Fuera de temporada',
+      color: inSeason ? '#22c55e' : '#ef4444',
+    };
+  };
+
+  const poolStatus = getPoolStatus();
 
   const handleGoBack = useCallback(() => {
     navigation.goBack();
@@ -243,26 +280,44 @@ export default function ScannerScreen() {
         onBarcodeScanned={scanning ? onBarcodeScanned : undefined}
       />
 
-      {/* Event Status Banner */}
-      {activeEvent && (
+      {/* Event/System Status Banner */}
+      {profile?.systemType === 'SWIMMING_POOL' ? (
         <View style={styles.bannerContainer}>
           <View style={styles.bannerContent}>
-            <Text style={styles.eventName} numberOfLines={1}>
-              {activeEvent.name}
-            </Text>
-            <View style={styles.statusRow}>
+            <View style={[styles.statusRow, { flex: 1 }]}>
               <View
                 style={[
                   styles.statusDot,
-                  { backgroundColor: activeEvent.seasonPassEnabled ? '#22c55e' : '#ef4444' },
+                  { backgroundColor: poolStatus?.color ?? '#ef4444', marginRight: 6 },
                 ]}
               />
-              <Text style={styles.statusText}>
-                {activeEvent.seasonPassEnabled ? 'Abonos activos' : 'Abonos desactivados'}
+              <Text style={[styles.statusText, { fontSize: 10, flex: 1, lineHeight: 13 }]} numberOfLines={2}>
+                {poolStatus?.text}
               </Text>
             </View>
           </View>
         </View>
+      ) : (
+        activeEvent && (
+          <View style={styles.bannerContainer}>
+            <View style={styles.bannerContent}>
+              <Text style={styles.eventName} numberOfLines={1}>
+                {activeEvent.name}
+              </Text>
+              <View style={styles.statusRow}>
+                <View
+                  style={[
+                    styles.statusDot,
+                    { backgroundColor: activeEvent.seasonPassEnabled ? '#22c55e' : '#ef4444' },
+                  ]}
+                />
+                <Text style={styles.statusText}>
+                  {activeEvent.seasonPassEnabled ? 'Abonos activos' : 'Abonos desactivados'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )
       )}
 
       {/* Dark vignette overlay with transparent center */}

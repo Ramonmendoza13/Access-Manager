@@ -22,6 +22,9 @@ export const upsertProfile = async (data: {
   teamName: string;
   venue: string;
   capacity: number;
+  systemType: import('../types').SystemType;
+  seasonStartDate?: string | null;
+  seasonEndDate?: string | null;
 }): Promise<ClubProfile> => {
   const response = await apiClient.post<ClubProfile>('/api/profile', data);
   return response.data;

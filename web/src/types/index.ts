@@ -1,9 +1,14 @@
+export type SystemType = 'FOOTBALL' | 'SWIMMING_POOL';
+
 export interface ClubProfile {
   id: number;
   teamName: string;
   venue: string;
   capacity: number;
   abonoBackgroundUrl: string | null;
+  systemType: SystemType;
+  seasonStartDate: string | null; // yyyy-MM-dd
+  seasonEndDate: string | null;   // yyyy-MM-dd
 }
 
 export interface TicketTypeTemplate {

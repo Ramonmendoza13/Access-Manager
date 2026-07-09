@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Data
@@ -38,6 +39,13 @@ public class Ticket {
     private Boolean isValid = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "ticket_type_id", nullable = false)
+    @JoinColumn(name = "ticket_type_id", nullable = true)
     private TicketType ticketType;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "ticket_type_template_id", nullable = true)
+    private TicketTypeTemplate ticketTypeTemplate;
+
+    @Column(name = "target_date")
+    private LocalDate targetDate;
 }

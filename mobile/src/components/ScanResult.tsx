@@ -118,6 +118,21 @@ export default function ScanResult({ result }: ScanResultProps) {
     bgColor = 'rgba(220,38,38,0.92)'; // rojo
     icon = '✗';
     title = 'ENTRADA YA USADA';
+  } else if (message === 'Fuera de temporada') {
+    bgColor = '#0D47A1'; // Azul oscuro
+    icon = '❄️';
+    title = 'FUERA DE TEMPORADA';
+    subtitle = 'La piscina no está en temporada activa';
+  } else if (message && message.includes('no es válida para hoy')) {
+    bgColor = 'rgba(249,115,22,0.92)'; // Naranja
+    icon = '📅';
+    title = 'ENTRADA NO VÁLIDA HOY';
+    subtitle = 'Esta entrada es para otro día';
+  } else if (message === 'Sin perfil configurado') {
+    bgColor = 'rgba(100, 116, 139, 0.92)'; // Gris
+    icon = '⚙️';
+    title = 'SIN CONFIGURAR';
+    subtitle = 'Configura el perfil del club en el panel web';
   } else {
     // Cualquier otro denied
     bgColor = 'rgba(220,38,38,0.92)'; // rojo

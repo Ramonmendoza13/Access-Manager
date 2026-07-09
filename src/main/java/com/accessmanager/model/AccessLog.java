@@ -36,6 +36,6 @@ public class AccessLog {
     private Abonado abonado;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "event_id", nullable = false)
+    @JoinColumn(name = "event_id", nullable = true)
     private Event event;
 }

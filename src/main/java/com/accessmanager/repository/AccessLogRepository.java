@@ -37,4 +37,7 @@ public interface AccessLogRepository extends JpaRepository<AccessLog, Long> {
             @Param("eventId") Long eventId,
             @Param("startOfDay") LocalDateTime startOfDay,
             @Param("endOfDay") LocalDateTime endOfDay);
+
+    boolean existsByAbonado_IdAndScannedAtBetween(
+            Long abonadoId, LocalDateTime start, LocalDateTime end);
 }

@@ -15,6 +15,7 @@ export interface SellTicketPayload {
   ticketTypeId: number;
   holderName: string;
   holderEmail: string;
+  targetDate?: string | null; // yyyy-MM-dd — only for SWIMMING_POOL mode
 }
 
 export const sellTicket = async (payload: SellTicketPayload): Promise<Ticket> => {

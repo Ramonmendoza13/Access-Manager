@@ -172,18 +172,38 @@ export default function ProfilePage() {
   const [teamName, setTeamName] = useState('');
   const [venue, setVenue] = useState('');
   const [capacity, setCapacity] = useState('');
+  const [systemType, setSystemType] = useState<'FOOTBALL' | 'SWIMMING_POOL'>('FOOTBALL');
+  const [seasonStartDate, setSeasonStartDate] = useState('');
+  const [seasonEndDate, setSeasonEndDate] = useState('');
 
   useEffect(() => {
     if (profile) {
       setTeamName(profile.teamName);
       setVenue(profile.venue);
       setCapacity(String(profile.capacity));
+      setSystemType(profile.systemType ?? 'FOOTBALL');
+      setSeasonStartDate(profile.seasonStartDate ?? '');
+      setSeasonEndDate(profile.seasonEndDate ?? '');
     }
   }, [profile]);
 
+  // Season date validation
+  const seasonDatesInvalid =
+    systemType === 'SWIMMING_POOL' &&
+    seasonStartDate &&
+    seasonEndDate &&
+    seasonEndDate < seasonStartDate;
+
   const upsertMutation = useMutation({
     mutationFn: () =>
-      upsertProfile({ teamName, venue, capacity: Number(capacity) }),
+      upsertProfile({
+        teamName,
+        venue,
+        capacity: Number(capacity),
+        systemType,
+        seasonStartDate: systemType === 'SWIMMING_POOL' ? seasonStartDate || null : null,
+        seasonEndDate: systemType === 'SWIMMING_POOL' ? seasonEndDate || null : null,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['profile'] });
       showToast('Perfil guardado correctamente');
@@ -283,6 +303,15 @@ export default function ProfilePage() {
 
   const previewSrc = bgPreviewLocal ?? bgPreviewRemote;
 
+  // ── Season banner helpers
+  const today = new Date().toISOString().split('T')[0];
+  const isInSeason =
+    profile?.systemType === 'SWIMMING_POOL' &&
+    profile?.seasonStartDate &&
+    profile?.seasonEndDate &&
+    today >= profile.seasonStartDate &&
+    today <= profile.seasonEndDate;
+
   return (
     <div className="flex flex-col gap-8 pb-10">
       {/* Page header */}
@@ -299,6 +328,36 @@ export default function ProfilePage() {
           </p>
         </div>
       </div>
+
+      {/* ── BANNER: Modo piscina ──────────────────────────────────────────── */}
+      {profile?.systemType === 'SWIMMING_POOL' && (
+        <div
+          className={`flex items-center gap-4 px-5 py-4 rounded-2xl border ${
+            isInSeason
+              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+              : 'bg-rose-500/10 border-rose-500/25 text-rose-300'
+          }`}
+        >
+          <span className="text-2xl">🏊</span>
+          <div className="flex-1">
+            <p className="text-sm font-semibold">
+              Modo Piscina activo — Temporada:{' '}
+              <span className="font-bold">
+                {profile.seasonStartDate} al {profile.seasonEndDate}
+              </span>
+            </p>
+          </div>
+          <span
+            className={`shrink-0 text-xs font-bold px-3 py-1 rounded-full border ${
+              isInSeason
+                ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                : 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+            }`}
+          >
+            {isInSeason ? '✓ En temporada' : '✗ Fuera de temporada'}
+          </span>
+        </div>
+      )}
 
       {/* ── SECCIÓN 1: Datos del club ─────────────────────────────────────── */}
       <SectionCard
@@ -323,11 +382,114 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* ── Selector de sistema ─────────────────────────────────────── */}
+            <div className="mb-6">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Tipo de sistema
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Card FOOTBALL */}
+                <button
+                  type="button"
+                  onClick={() => setSystemType('FOOTBALL')}
+                  className={`flex items-start gap-3 px-4 py-4 rounded-xl border text-left transition-all duration-200 ${
+                    systemType === 'FOOTBALL'
+                      ? 'border-blue-500/60 bg-blue-500/10 ring-1 ring-blue-500/30'
+                      : 'border-slate-700/60 bg-slate-800/40 hover:border-slate-600/60 hover:bg-slate-800/70'
+                  }`}
+                >
+                  <span className="text-2xl mt-0.5">⚽</span>
+                  <div>
+                    <p className={`text-sm font-semibold ${
+                      systemType === 'FOOTBALL' ? 'text-blue-300' : 'text-slate-200'
+                    }`}>
+                      Club de Fútbol
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Eventos independientes, abonos válidos por partido
+                    </p>
+                  </div>
+                  {systemType === 'FOOTBALL' && (
+                    <span className="ml-auto shrink-0 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
+                      <CheckIcon />
+                    </span>
+                  )}
+                </button>
+
+                {/* Card SWIMMING_POOL */}
+                <button
+                  type="button"
+                  onClick={() => setSystemType('SWIMMING_POOL')}
+                  className={`flex items-start gap-3 px-4 py-4 rounded-xl border text-left transition-all duration-200 ${
+                    systemType === 'SWIMMING_POOL'
+                      ? 'border-blue-500/60 bg-blue-500/10 ring-1 ring-blue-500/30'
+                      : 'border-slate-700/60 bg-slate-800/40 hover:border-slate-600/60 hover:bg-slate-800/70'
+                  }`}
+                >
+                  <span className="text-2xl mt-0.5">🏊</span>
+                  <div>
+                    <p className={`text-sm font-semibold ${
+                      systemType === 'SWIMMING_POOL' ? 'text-blue-300' : 'text-slate-200'
+                    }`}>
+                      Piscina / Temporada
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                      Temporada con fechas fijas, entradas diarias
+                    </p>
+                  </div>
+                  {systemType === 'SWIMMING_POOL' && (
+                    <span className="ml-auto shrink-0 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center">
+                      <CheckIcon />
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Season dates — visible only for SWIMMING_POOL */}
+              {systemType === 'SWIMMING_POOL' && (
+                <div className="mt-4 space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field label="Inicio de temporada">
+                      <input
+                        type="date"
+                        className={inputCls}
+                        value={seasonStartDate}
+                        onChange={(e) => setSeasonStartDate(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="Fin de temporada">
+                      <input
+                        type="date"
+                        className={inputCls}
+                        value={seasonEndDate}
+                        onChange={(e) => setSeasonEndDate(e.target.value)}
+                      />
+                    </Field>
+                  </div>
+
+                  {seasonDatesInvalid && (
+                    <p className="text-xs text-rose-400 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      La fecha de fin no puede ser anterior a la de inicio
+                    </p>
+                  )}
+
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    Los abonos solo serán válidos entre estas fechas.
+                    Las entradas solo se podrán vender para días dentro de este rango.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Campos nombre / aforo / venue ─────────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <Field label="Nombre del equipo">
+              <Field label={systemType === 'SWIMMING_POOL' ? 'Nombre de la temporada' : 'Nombre del equipo'}>
                 <input
                   className={inputCls}
-                  placeholder="Ej. Real Betis Balompié"
+                  placeholder={systemType === 'SWIMMING_POOL' ? 'Ej. Temporada Piscina 2026' : 'Ej. Real Betis Balompié'}
                   value={teamName}
                   onChange={(e) => setTeamName(e.target.value)}
                 />
@@ -344,10 +506,10 @@ export default function ProfilePage() {
                 />
               </Field>
 
-              <Field label="Estadio / Venue">
+              <Field label={systemType === 'SWIMMING_POOL' ? 'Nombre del recinto' : 'Estadio / Venue'}>
                 <input
                   className={`${inputCls} sm:col-span-2`}
-                  placeholder="Ej. Estadio Benito Villamarín"
+                  placeholder={systemType === 'SWIMMING_POOL' ? 'Ej. Piscina Municipal de Sevilla' : 'Ej. Estadio Benito Villamarín'}
                   value={venue}
                   onChange={(e) => setVenue(e.target.value)}
                 />
@@ -357,7 +519,14 @@ export default function ProfilePage() {
             <div className="mt-6 flex justify-end">
               <button
                 onClick={() => upsertMutation.mutate()}
-                disabled={upsertMutation.isPending || !teamName || !venue || !capacity}
+                disabled={
+                  upsertMutation.isPending ||
+                  !teamName ||
+                  !venue ||
+                  !capacity ||
+                  (systemType === 'SWIMMING_POOL' && (!seasonStartDate || !seasonEndDate)) ||
+                  !!seasonDatesInvalid
+                }
                 className="flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-violet-500/20"
               >
                 {upsertMutation.isPending ? (

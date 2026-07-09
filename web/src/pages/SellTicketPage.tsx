@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getActiveEvent } from '../api/events';
 import { getTicketTypesByEvent, sellTicket, getTicketQrBlob } from '../api/tickets';
+import { getProfile } from '../api/profile';
+import { getTemplates } from '../api/ticketTemplates';
 import type { TicketType, Ticket } from '../types';
 
 // ─── Stepper component ────────────────────────────────────────────────────────
@@ -61,7 +63,32 @@ function Stepper({ current }: { current: number }) {
   );
 }
 
-// ─── Canvas ticket helpers ───────────────────────────────────────────────────
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
+const DAYS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const MONTHS_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+/** Formats "2025-07-15" → "Martes 15 de julio" */
+function formatDateEs(dateStr: string): string {
+  if (!dateStr) return '';
+  // Parse as local date to avoid UTC-shift
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const dayName = DAYS_ES[date.getDay()];
+  const dayNum = date.getDate();
+  const monthName = MONTHS_ES[date.getMonth()];
+  return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${dayNum} de ${monthName}`;
+}
+
+/** Returns today's date as "yyyy-MM-dd" */
+function todayStr(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+// ─── Canvas ticket helpers ─────────────────────────────────────────────────────
 const drawRoundedRect = (
   c: CanvasRenderingContext2D,
   x: number,
@@ -114,48 +141,51 @@ function generateTicketCanvas(
   qrBlobUrl: string,
   eventDate?: string,
   eventVenue?: string,
-  bgUrl?: string | null
+  bgUrl?: string | null,
+  targetDate?: string | null   // SWIMMING_POOL: the valid day
 ): Promise<HTMLCanvasElement> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement('canvas');
     canvas.width = 600;
-    canvas.height = 800;
+    // Taller canvas for SWIMMING_POOL to fit the date band
+    canvas.height = targetDate ? 860 : 800;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       reject(new Error('Could not get 2D context'));
       return;
     }
 
+    const H = canvas.height;
+
     const drawAll = (qrImg: HTMLImageElement) => {
-      // 1. Clip context to rounded card (radii of 24)
+      // 1. Clip context to rounded card
       ctx.save();
-      drawRoundedRect(ctx, 2, 2, 596, 796, 24);
+      drawRoundedRect(ctx, 2, 2, 596, H - 4, 24);
       ctx.clip();
 
       // 2. White background
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 600, 800);
-
+      ctx.fillRect(0, 0, 600, H);
       ctx.restore();
 
-      // 2b. Optional background image at low opacity (drawn outside clip so it fills whole card area)
-      // We re-clip after
+      // 2b. Optional background image
       ctx.save();
-      drawRoundedRect(ctx, 2, 2, 596, 796, 24);
+      drawRoundedRect(ctx, 2, 2, 596, H - 4, 24);
       ctx.clip();
 
       const finishDrawing = () => {
-        // 3. Dark Header background (#1a1a2e)
+        // 3. Dark Header background — taller if SWIMMING_POOL
+        const headerH = targetDate ? 200 : 160;
         ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(0, 0, 600, 160);
+        ctx.fillRect(0, 0, 600, headerH);
 
-        // Header Text: eventName
+        // Header: event / pool name
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 28px sans-serif';
         ctx.textAlign = 'center';
         wrapText(ctx, ticket.eventName, 300, 50, 520, 34);
 
-        // Header Text: date and venue
+        // Header: date/venue line
         ctx.fillStyle = '#94a3b8';
         ctx.font = '15px sans-serif';
         const formattedDate = eventDate
@@ -170,51 +200,65 @@ function generateTicketCanvas(
         const venueStr = eventVenue || 'Recinto';
         ctx.fillText(`${formattedDate}   |   ${venueStr}`, 300, 125);
 
+        // SWIMMING_POOL: "VÁLIDO PARA" banner inside header
+        if (targetDate) {
+          const bandY = 145;
+          const bandH = 42;
+          // Cyan band
+          ctx.fillStyle = '#0e7490';
+          ctx.fillRect(0, bandY, 600, bandH);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 17px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`VÁLIDO PARA: ${formatDateEs(targetDate).toUpperCase()}`, 300, bandY + 27);
+        }
+
         ctx.restore(); // Restore clip context
 
-        // Card border stroke (light gray #e2e8f0)
+        // Card border
         ctx.strokeStyle = '#e2e8f0';
         ctx.lineWidth = 4;
         ctx.beginPath();
-        drawRoundedRect(ctx, 2, 2, 596, 796, 24);
+        drawRoundedRect(ctx, 2, 2, 596, H - 4, 24);
         ctx.stroke();
 
-        // 4. Center Section: QR Image (400x400) centered
-        ctx.drawImage(qrImg, 100, 180, 400, 400);
+        // 4. QR Image centered below header
+        const qrTop = targetDate ? 220 : 180;
+        ctx.drawImage(qrImg, 100, qrTop, 400, 400);
 
         // 5. Lower Section details
+        const detailTop = targetDate ? 650 : 610;
         ctx.textAlign = 'left';
 
-        // Line 1: Titular
+        // Titular
         ctx.fillStyle = '#475569';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('Titular: ', 100, 610);
+        ctx.fillText('Titular: ', 100, detailTop);
         ctx.fillStyle = '#1e293b';
         ctx.font = '16px sans-serif';
-        ctx.fillText(ticket.holderName, 100 + ctx.measureText('Titular: ').width, 610);
+        ctx.fillText(ticket.holderName, 100 + ctx.measureText('Titular: ').width, detailTop);
 
-        // Line 2: Email
+        // Email
         ctx.fillStyle = '#475569';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('Email: ', 100, 645);
+        ctx.fillText('Email: ', 100, detailTop + 35);
         ctx.fillStyle = '#1e293b';
         ctx.font = '16px sans-serif';
-        ctx.fillText(ticket.holderEmail, 100 + ctx.measureText('Email: ').width, 645);
+        ctx.fillText(ticket.holderEmail, 100 + ctx.measureText('Email: ').width, detailTop + 35);
 
-        // Line 3: Tipo + Badge
+        // Tipo + Badge
         ctx.fillStyle = '#475569';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('Tipo: ', 100, 680);
+        ctx.fillText('Tipo: ', 100, detailTop + 70);
         ctx.fillStyle = '#1e293b';
         ctx.font = '16px sans-serif';
-        ctx.fillText(ticket.ticketTypeName, 100 + ctx.measureText('Tipo: ').width, 680);
+        ctx.fillText(ticket.ticketTypeName, 100 + ctx.measureText('Tipo: ').width, detailTop + 70);
 
         const typeLabelWidth = ctx.measureText('Tipo: ').width;
         const typeValWidth = ctx.measureText(ticket.ticketTypeName).width;
         const badgeX = 100 + typeLabelWidth + typeValWidth + 12;
-        const badgeY = 662;
+        const badgeY = detailTop + 52;
         const badgeText = ticket.isSeasonPass ? 'ABONO' : 'ENTRADA';
-
         ctx.font = 'bold 11px sans-serif';
         const badgeTextWidth = ctx.measureText(badgeText).width;
         const badgeWidth = badgeTextWidth + 16;
@@ -227,30 +271,33 @@ function generateTicketCanvas(
         ctx.textAlign = 'center';
         ctx.fillText(badgeText, badgeX + badgeWidth / 2, badgeY + 15);
 
-        // Line 4: Precio
+        // Precio
         ctx.textAlign = 'left';
         ctx.fillStyle = '#475569';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('Precio: ', 100, 715);
+        ctx.fillText('Precio: ', 100, detailTop + 105);
         ctx.fillStyle = '#1e293b';
         ctx.font = '16px sans-serif';
-        const priceStr = ticket.price !== undefined && ticket.price !== null ? `${Number(ticket.price).toFixed(2)} €` : 'N/A';
-        ctx.fillText(priceStr, 100 + ctx.measureText('Precio: ').width, 715);
+        const priceStr =
+          ticket.price !== undefined && ticket.price !== null
+            ? `${Number(ticket.price).toFixed(2)} €`
+            : 'N/A';
+        ctx.fillText(priceStr, 100 + ctx.measureText('Precio: ').width, detailTop + 105);
 
-        // Line 5: ID
+        // ID
         ctx.fillStyle = '#475569';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('ID: ', 100, 750);
+        ctx.fillText('ID: ', 100, detailTop + 140);
         ctx.fillStyle = '#64748b';
         ctx.font = '16px monospace';
         const idStr = (ticket.qrCode || '').slice(0, 8).toUpperCase();
-        ctx.fillText(idStr, 100 + ctx.measureText('ID: ').width, 750);
+        ctx.fillText(idStr, 100 + ctx.measureText('ID: ').width, detailTop + 140);
 
-        // 6. Footer: Access Manager
+        // 6. Footer
         ctx.textAlign = 'center';
         ctx.fillStyle = '#cbd5e1';
         ctx.font = 'bold 14px sans-serif';
-        ctx.fillText('Access Manager', 300, 780);
+        ctx.fillText('Access Manager', 300, H - 20);
 
         resolve(canvas);
       };
@@ -260,14 +307,12 @@ function generateTicketCanvas(
         bgImg.crossOrigin = 'anonymous';
         bgImg.src = bgUrl;
         bgImg.onload = () => {
-          // Draw background at 0.15 opacity
           ctx.globalAlpha = 0.15;
-          ctx.drawImage(bgImg, 0, 0, 600, 800);
+          ctx.drawImage(bgImg, 0, 0, 600, H);
           ctx.globalAlpha = 1.0;
           finishDrawing();
         };
         bgImg.onerror = () => {
-          // Silently skip background if it fails to load
           finishDrawing();
         };
       } else {
@@ -291,6 +336,10 @@ export default function SellTicketPage() {
   const [holderEmail, setHolderEmail] = useState('');
   const [sellError, setSellError] = useState('');
 
+  // SWIMMING_POOL: selected target date
+  const [selectedDate, setSelectedDate] = useState('');
+  const [dateError, setDateError] = useState('');
+
   // QR blob URL state
   const [qrBlobUrl, setQrBlobUrl] = useState<string | null>(null);
 
@@ -298,10 +347,21 @@ export default function SellTicketPage() {
   const [ticketCanvasUrl, setTicketCanvasUrl] = useState<string | null>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
+
+  // Profile query — needed to detect SWIMMING_POOL mode
+  const { data: profile, isLoading: loadingProfile } = useQuery({
+    queryKey: ['profile'],
+    queryFn: getProfile,
+    staleTime: 60000,
+  });
+
+  const isSwimmingPool = profile?.systemType === 'SWIMMING_POOL';
+
   const { data: activeEvent, isLoading: loadingEvent, error: eventError } = useQuery({
     queryKey: ['activeEvent'],
     queryFn: getActiveEvent,
     staleTime: 30000,
+    // In SWIMMING_POOL mode there's no required active event, but we still try silently
     retry: (failureCount, error: unknown) => {
       if ((error as any)?.response?.status === 404) return false;
       return failureCount < 1;
@@ -316,8 +376,23 @@ export default function SellTicketPage() {
   } = useQuery({
     queryKey: ['ticketTypes', activeEvent?.id],
     queryFn: () => getTicketTypesByEvent(activeEvent!.id),
-    enabled: !!activeEvent?.id,
+    enabled: !!activeEvent?.id && !isSwimmingPool,
   });
+
+  // SWIMMING_POOL: profile ticket-type templates as selectable options
+  const { data: poolTemplates = [], isLoading: loadingTemplates } = useQuery({
+    queryKey: ['ticketTemplates'],
+    queryFn: getTemplates,
+    enabled: isSwimmingPool,
+    staleTime: 60000,
+  });
+
+  // Unified list for rendering — normalise TicketTypeTemplate into TicketType shape
+  const displayedTypes: TicketType[] = isSwimmingPool
+    ? poolTemplates.map((t) => ({ id: t.id, name: t.name, price: t.price, isSeasonPass: false, quota: 0 }))
+    : ticketTypes;
+
+  const loadingDisplayedTypes = isSwimmingPool ? loadingTemplates : loadingTypes;
 
   // ── QR fetch when step=3 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -335,7 +410,7 @@ export default function SellTicketPage() {
     };
   }, [step, soldTicket]);
 
-  // ── Ticket Canvas generation when qrBlobUrl is ready ────────────────────────
+  // ── Ticket Canvas generation when qrBlobUrl is ready ─────────────────────
   useEffect(() => {
     if (!qrBlobUrl || !soldTicket) {
       setTicketCanvasUrl(null);
@@ -347,7 +422,6 @@ export default function SellTicketPage() {
     let bgObjectUrl: string | null = null;
 
     const run = async () => {
-      // Use the Cloudinary URL from the event if available
       const bgUrl: string | null = activeEvent?.entradaBackgroundUrl ?? null;
 
       if (!active) return;
@@ -357,7 +431,8 @@ export default function SellTicketPage() {
         qrBlobUrl,
         activeEvent?.date,
         activeEvent?.venue,
-        bgUrl
+        bgUrl,
+        isSwimmingPool ? selectedDate : null
       )
         .then((canvas) => {
           if (!active) return;
@@ -380,7 +455,7 @@ export default function SellTicketPage() {
       if (canvasUrl) URL.revokeObjectURL(canvasUrl);
       if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
     };
-  }, [qrBlobUrl, soldTicket, activeEvent]);
+  }, [qrBlobUrl, soldTicket, activeEvent, isSwimmingPool, selectedDate]);
 
   // ── Sell mutation ──────────────────────────────────────────────────────────
   const { mutate: mutateSell, isPending: isSelling } = useMutation({
@@ -415,6 +490,8 @@ export default function SellTicketPage() {
     setSellError('');
     setQrBlobUrl(null);
     setTicketCanvasUrl(null);
+    setSelectedDate('');
+    setDateError('');
   };
 
   // ── QR download ────────────────────────────────────────────────────────────
@@ -426,6 +503,34 @@ export default function SellTicketPage() {
     link.click();
   };
 
+  // ── Date validation (SWIMMING_POOL) ────────────────────────────────────────
+  const handleDateChange = (value: string) => {
+    setSelectedDate(value);
+    if (!value) { setDateError(''); return; }
+
+    const today = todayStr();
+    const start = profile?.seasonStartDate ?? '';
+    const end = profile?.seasonEndDate ?? '';
+
+    if (value < today) {
+      setDateError('No puedes seleccionar una fecha pasada');
+    } else if ((start && value < start) || (end && value > end)) {
+      setDateError('Fecha fuera de temporada');
+    } else {
+      setDateError('');
+    }
+  };
+
+  // ── Step 1 → 2: type card click ────────────────────────────────────────────
+  const handleSelectType = (tt: TicketType) => {
+    // SWIMMING_POOL: must have a valid date before advancing
+    if (isSwimmingPool) {
+      if (!selectedDate || dateError) return;
+    }
+    setSelectedType(tt);
+    setStep(2);
+  };
+
   // ── Step 2 submit ──────────────────────────────────────────────────────────
   const handleSell = (e: React.FormEvent) => {
     e.preventDefault();
@@ -435,6 +540,7 @@ export default function SellTicketPage() {
       ticketTypeId: selectedType.id,
       holderName: holderName.trim(),
       holderEmail: holderEmail.trim(),
+      targetDate: isSwimmingPool ? selectedDate : null,
     });
   };
 
@@ -455,94 +561,227 @@ export default function SellTicketPage() {
       {/* ── STEP 1: Select ticket type ─────────────────────────────────────── */}
       {step === 1 && (
         <div className="space-y-5">
-          {/* Event loading */}
-          {loadingEvent && (
+
+          {/* Loading profile */}
+          {loadingProfile && (
             <div className="flex justify-center py-12">
               <div className="animate-spin border-4 border-blue-500 rounded-full h-8 w-8 border-t-transparent" />
             </div>
           )}
 
-          {/* No active event */}
-          {!loadingEvent && (isNoActiveEvent || !activeEvent) && (
-            <div className="glass p-8 rounded-2xl border border-slate-800 text-center py-14">
+          {/* No profile configured */}
+          {!loadingProfile && !profile && (
+            <div className="glass p-8 rounded-2xl border border-amber-500/20 text-center py-14">
               <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <p className="text-slate-300 text-base">
-                No hay evento activo.{' '}
-                <Link to="/events" className="text-violet-400 hover:text-violet-300 font-semibold underline">
-                  Ve a Eventos
-                </Link>{' '}
-                para activar uno antes de vender entradas.
+                Configura el perfil del club primero.{' '}
+                <Link to="/profile" className="text-violet-400 hover:text-violet-300 font-semibold underline">
+                  Ir a Perfil
+                </Link>
               </p>
             </div>
           )}
 
-          {/* Ticket types */}
-          {activeEvent && (
+          {/* ─── FOOTBALL MODE ─────────────────────────────────────────────── */}
+          {!loadingProfile && profile && !isSwimmingPool && (
             <>
-              <div className="flex items-center gap-3 glass px-4 py-3 rounded-xl border border-slate-800">
-                <span className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
-                <span className="text-slate-300 text-sm">
-                  Evento activo:{' '}
-                  <span className="text-white font-semibold">{activeEvent.name}</span>
-                </span>
-              </div>
-
-              {loadingTypes && (
-                <div className="flex justify-center py-8">
+              {/* Event loading */}
+              {loadingEvent && (
+                <div className="flex justify-center py-12">
                   <div className="animate-spin border-4 border-blue-500 rounded-full h-8 w-8 border-t-transparent" />
                 </div>
               )}
 
-              {!loadingTypes && ticketTypes.length === 0 && (
-                <div className="glass p-6 rounded-2xl border border-slate-800 text-center py-10">
-                  <p className="text-slate-400 text-sm">
-                    Este evento aún no tiene tipos de entrada configurados.
+              {/* No active event */}
+              {!loadingEvent && (isNoActiveEvent || !activeEvent) && (
+                <div className="glass p-8 rounded-2xl border border-slate-800 text-center py-14">
+                  <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-slate-300 text-base">
+                    No hay evento activo.{' '}
+                    <Link to="/events" className="text-violet-400 hover:text-violet-300 font-semibold underline">
+                      Ve a Eventos
+                    </Link>{' '}
+                    para activar uno antes de vender entradas.
                   </p>
                 </div>
               )}
 
-              {!loadingTypes && ticketTypes.length > 0 && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {ticketTypes.map((tt) => (
-                    <button
-                      key={tt.id}
-                      onClick={() => {
-                        setSelectedType(tt);
-                        setStep(2);
-                      }}
-                      className="text-left glass p-5 rounded-2xl border border-slate-800 hover:border-blue-500/40 hover:bg-slate-800/60 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="text-white font-bold text-lg leading-tight group-hover:text-blue-300 transition-colors">
-                          {tt.name}
-                        </span>
-                        {tt.isSeasonPass ? (
-                          <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                            ABONO
-                          </span>
-                        ) : (
-                          <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                            ENTRADA
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-3 flex items-end justify-between">
-                        <span className="text-2xl font-extrabold text-white">
-                          {Number(tt.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
-                        </span>
-                        {tt.quota !== null && (
-                          <span className="text-xs text-slate-500">
-                            Cupo: {tt.quota}
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
+              {/* Ticket types */}
+              {activeEvent && (
+                <>
+                  <div className="flex items-center gap-3 glass px-4 py-3 rounded-xl border border-slate-800">
+                    <span className="w-2 h-2 rounded-full bg-green-400 shrink-0" />
+                    <span className="text-slate-300 text-sm">
+                      Evento activo:{' '}
+                      <span className="text-white font-semibold">{activeEvent.name}</span>
+                    </span>
+                  </div>
+
+                  {loadingTypes && (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin border-4 border-blue-500 rounded-full h-8 w-8 border-t-transparent" />
+                    </div>
+                  )}
+
+                  {!loadingTypes && ticketTypes.length === 0 && (
+                    <div className="glass p-6 rounded-2xl border border-slate-800 text-center py-10">
+                      <p className="text-slate-400 text-sm">
+                        Este evento aún no tiene tipos de entrada configurados.
+                      </p>
+                    </div>
+                  )}
+
+                  {!loadingTypes && ticketTypes.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {ticketTypes.map((tt) => (
+                        <button
+                          key={tt.id}
+                          onClick={() => handleSelectType(tt)}
+                          className="text-left glass p-5 rounded-2xl border border-slate-800 hover:border-blue-500/40 hover:bg-slate-800/60 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-white font-bold text-lg leading-tight group-hover:text-blue-300 transition-colors">
+                              {tt.name}
+                            </span>
+                            {tt.isSeasonPass ? (
+                              <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                                ABONO
+                              </span>
+                            ) : (
+                              <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                                ENTRADA
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 flex items-end justify-between">
+                            <span className="text-2xl font-extrabold text-white">
+                              {Number(tt.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                            </span>
+                            {tt.quota !== null && (
+                              <span className="text-xs text-slate-500">
+                                Cupo: {tt.quota}
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          )}
+
+          {/* ─── SWIMMING_POOL MODE ─────────────────────────────────────────── */}
+          {!loadingProfile && profile && isSwimmingPool && (
+            <>
+              {/* Pool mode badge */}
+              <div className="flex items-center gap-3 glass px-4 py-3 rounded-xl border border-cyan-700/40 bg-cyan-900/10">
+                <span className="text-lg">🏊</span>
+                <span className="text-slate-300 text-sm">
+                  Modo Piscina —{' '}
+                  <span className="text-cyan-300 font-semibold">
+                    Temporada: {profile.seasonStartDate} al {profile.seasonEndDate}
+                  </span>
+                </span>
+              </div>
+
+              {/* ── PASO 1: Date picker ────────────────────────────────────── */}
+              <div className="glass p-5 rounded-2xl border border-slate-800 space-y-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    ¿Para qué día?
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    min={profile.seasonStartDate ?? todayStr()}
+                    max={profile.seasonEndDate ?? undefined}
+                    onChange={(e) => handleDateChange(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-slate-800 text-slate-200 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/30 transition-all"
+                  />
+                  {/* Human-readable day label */}
+                  {selectedDate && !dateError && (
+                    <p className="text-sm font-semibold text-cyan-400 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      {formatDateEs(selectedDate)}
+                    </p>
+                  )}
+                  {/* Date error */}
+                  {dateError && (
+                    <p className="text-xs text-rose-400 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {dateError}
+                    </p>
+                  )}
                 </div>
+
+                {/* Hint when no date yet */}
+                {!selectedDate && (
+                  <p className="text-xs text-slate-500">
+                    Selecciona el día para el que quieres vender la entrada antes de elegir el tipo.
+                  </p>
+                )}
+              </div>
+
+              {/* Ticket type cards — shown only when a valid date is selected */}
+              {selectedDate && !dateError && (
+                <>
+                  {loadingDisplayedTypes && (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin border-4 border-blue-500 rounded-full h-8 w-8 border-t-transparent" />
+                    </div>
+                  )}
+
+                  {!loadingDisplayedTypes && displayedTypes.length === 0 && (
+                    <div className="glass p-6 rounded-2xl border border-slate-800 text-center py-10">
+                      <p className="text-slate-400 text-sm">
+                        No hay tipos de entrada configurados.{' '}
+                        <Link to="/perfil" className="text-violet-400 hover:text-violet-300 font-semibold underline">
+                          Añade tipos en Perfil
+                        </Link>
+                      </p>
+                    </div>
+                  )}
+
+                  {!loadingDisplayedTypes && displayedTypes.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {displayedTypes.map((tt) => (
+                        <button
+                          key={tt.id}
+                          onClick={() => handleSelectType(tt)}
+                          className="text-left glass p-5 rounded-2xl border border-slate-800 hover:border-cyan-500/40 hover:bg-slate-800/60 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-white font-bold text-lg leading-tight group-hover:text-cyan-300 transition-colors">
+                              {tt.name}
+                            </span>
+                            <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800">
+                              ENTRADA DIARIA
+                            </span>
+                          </div>
+                          <div className="mt-3">
+                            <span className="text-2xl font-extrabold text-white">
+                              {Number(tt.price).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -632,18 +871,39 @@ export default function SellTicketPage() {
           <div className="md:col-span-1 glass p-5 rounded-2xl border border-slate-800 h-fit space-y-4">
             <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Resumen</h3>
             <div className="space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-white font-semibold text-base leading-tight">{selectedType.name}</span>
-                {selectedType.isSeasonPass ? (
-                  <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                    ABONO
-                  </span>
-                ) : (
-                  <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
-                    ENTRADA
-                  </span>
-                )}
-              </div>
+
+              {/* SWIMMING_POOL: date is the headline */}
+              {isSwimmingPool && selectedDate ? (
+                <>
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Día</p>
+                    <p className="text-white font-bold text-base leading-tight">
+                      {formatDateEs(selectedDate)}
+                    </p>
+                  </div>
+                  <div className="border-t border-slate-800 pt-3 flex items-start justify-between gap-2">
+                    <span className="text-slate-300 text-sm">{selectedType.name}</span>
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-cyan-100 text-cyan-800">
+                      ENTRADA DIARIA
+                    </span>
+                  </div>
+                </>
+              ) : (
+                /* FOOTBALL: type is the headline */
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-white font-semibold text-base leading-tight">{selectedType.name}</span>
+                  {selectedType.isSeasonPass ? (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                      ABONO
+                    </span>
+                  ) : (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                      ENTRADA
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="border-t border-slate-800 pt-3">
                 <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Precio</p>
                 <p className="text-2xl font-extrabold text-white mt-0.5">
@@ -671,6 +931,12 @@ export default function SellTicketPage() {
                 La entrada ha sido emitida correctamente para{' '}
                 <span className="text-white font-semibold">{soldTicket.holderName}</span>
               </p>
+              {/* SWIMMING_POOL: show the valid date */}
+              {isSwimmingPool && selectedDate && (
+                <p className="text-cyan-400 text-sm font-semibold mt-1">
+                  📅 Válida para: {formatDateEs(selectedDate)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -681,12 +947,15 @@ export default function SellTicketPage() {
                 <img
                   src={ticketCanvasUrl}
                   alt={`Entrada de ${soldTicket.holderName}`}
-                  style={{ width: '300px', height: '400px' }}
+                  style={{ width: '300px', height: isSwimmingPool ? '430px' : '400px' }}
                   className="object-contain rounded-[12px]"
                 />
               </div>
             ) : (
-              <div className="w-[300px] h-[400px] rounded-3xl bg-slate-900/60 border border-slate-800 flex items-center justify-center">
+              <div
+                className="rounded-3xl bg-slate-900/60 border border-slate-800 flex items-center justify-center"
+                style={{ width: '300px', height: isSwimmingPool ? '430px' : '400px' }}
+              >
                 <div className="flex flex-col items-center gap-3">
                   <div className="animate-spin border-4 border-blue-500 rounded-full h-8 w-8 border-t-transparent" />
                   <span className="text-slate-400 text-xs font-medium">Generando entrada...</span>
