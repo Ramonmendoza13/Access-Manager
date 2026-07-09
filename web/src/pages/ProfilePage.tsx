@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getProfile,
@@ -7,6 +8,8 @@ import {
   deleteAbonoBackground,
 } from '../api/profile';
 import { getTemplates, createTemplate, deleteTemplate } from '../api/ticketTemplates';
+import { previewReset, confirmReset } from '../api/seasonReset';
+import type { SeasonResetPreview } from '../api/seasonReset';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -150,10 +153,274 @@ function Toast({ message, type }: { message: string; type: 'success' | 'error' }
   );
 }
 
+// ─── Season Reset Modal ───────────────────────────────────────────────────────
+
+const CONFIRM_PHRASE = 'BORRAR TEMPORADA';
+
+function SeasonResetModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [preview, setPreview] = useState<SeasonResetPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(true);
+  const [confirmText, setConfirmText] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const resetMutation = useMutation({
+    mutationFn: () => confirmReset(CONFIRM_PHRASE),
+    onSuccess,
+    onError: (err: unknown) => {
+      let msg: string | null = null;
+      if (
+        err &&
+        typeof err === 'object' &&
+        'response' in err
+      ) {
+        const apiError = (err as { response?: { data?: { error?: string } } }).response?.data?.error;
+        if (typeof apiError === 'string') msg = apiError;
+      }
+      setErrorMsg(msg ?? 'Error al resetear la temporada');
+    },
+  });
+
+  const isResetting = resetMutation.isPending;
+
+  // Load preview when modal opens
+  useEffect(() => {
+    setPreviewLoading(true);
+    previewReset()
+      .then((data) => setPreview(data))
+      .catch(() => setPreview(null))
+      .finally(() => setPreviewLoading(false));
+  }, []);
+
+  const handleBackdropClick = () => {
+    if (!isResetting) onClose();
+  };
+
+  const phraseMatch = confirmText === CONFIRM_PHRASE;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ backgroundColor: 'rgba(2, 6, 23, 0.85)' }}
+      onClick={handleBackdropClick}
+    >
+      <div
+        className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Red top accent bar */}
+        <div className="h-1 w-full bg-gradient-to-r from-rose-600 via-red-500 to-rose-600" />
+
+        {/* Close button — hidden during reset */}
+        {!isResetting && (
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-all duration-150"
+            aria-label="Cerrar"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+
+        {/* ── STEP 1: Warning + data preview ─────────────────────────────── */}
+        {step === 1 && (
+          <div className="p-6 flex flex-col gap-5">
+            {/* Title */}
+            <div className="flex items-center gap-3 pr-8">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <span className="text-lg">⚠️</span>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-rose-300">Esta acción es irreversible</h2>
+                <p className="text-xs text-slate-500 mt-0.5">No se puede recuperar ningún dato</p>
+              </div>
+            </div>
+
+            {/* Data preview */}
+            <div className="rounded-xl bg-rose-500/5 border border-rose-500/20 p-4">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                Se eliminarán permanentemente:
+              </p>
+              {previewLoading ? (
+                <div className="flex items-center gap-2 py-2">
+                  <div className="w-4 h-4 border-2 border-rose-500/30 border-t-rose-500 rounded-full animate-spin" />
+                  <span className="text-sm text-slate-500">Cargando datos...</span>
+                </div>
+              ) : preview ? (
+                <ul className="space-y-2">
+                  {[
+                    { label: 'eventos', count: preview.eventsCount },
+                    { label: 'entradas vendidas', count: preview.ticketsCount },
+                    { label: 'abonados', count: preview.abonadosCount },
+                    { label: 'registros de acceso', count: preview.accessLogsCount },
+                  ].map(({ label, count }) => (
+                    <li key={label} className="flex items-center gap-2 text-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                      <span className="font-bold text-rose-400 tabular-nums text-base leading-none">
+                        {count.toLocaleString()}
+                      </span>
+                      <span className="text-slate-400">{label}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-500 italic">No se pudieron cargar los datos</p>
+              )}
+            </div>
+
+            {/* Safe data note */}
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60">
+              <svg className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Los <span className="text-slate-200 font-semibold">tipos de abono</span>,{' '}
+                <span className="text-slate-200 font-semibold">plantillas de entrada</span> y el{' '}
+                <span className="text-slate-200 font-semibold">perfil del club</span>{' '}
+                NO se eliminarán.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={onClose}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-700/60 text-slate-300 text-sm font-semibold hover:bg-slate-800 hover:border-slate-600 transition-all duration-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                disabled={previewLoading}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all duration-200 shadow-lg shadow-rose-500/20"
+              >
+                Continuar →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 2: Confirm phrase ──────────────────────────────────────── */}
+        {step === 2 && (
+          <div className="p-6 flex flex-col gap-5">
+            {/* Title */}
+            <div className="flex items-center gap-3 pr-8">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <svg className="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-rose-300">Confirmación requerida</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Escribe la frase exactamente para continuar</p>
+              </div>
+            </div>
+
+            {/* Instruction */}
+            <div>
+              <p className="text-sm text-slate-400 mb-3">
+                Para confirmar, escribe exactamente la siguiente frase:
+              </p>
+              <div className="px-4 py-3 rounded-xl bg-slate-800 border border-slate-700/60">
+                <span className="font-mono text-sm font-bold text-slate-200 tracking-wider select-all">
+                  {CONFIRM_PHRASE}
+                </span>
+              </div>
+            </div>
+
+            {/* Input */}
+            <div>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => {
+                  setConfirmText(e.target.value);
+                  setErrorMsg(null);
+                }}
+                disabled={isResetting}
+                placeholder="Escribe la frase aquí..."
+                autoFocus
+                className={`w-full bg-slate-800/60 border rounded-xl px-4 py-3 text-sm font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 transition-all duration-200 disabled:opacity-50 ${
+                  confirmText === ''
+                    ? 'border-slate-700/60 focus:ring-slate-500/30 focus:border-slate-600'
+                    : phraseMatch
+                    ? 'border-emerald-500/60 focus:ring-emerald-500/30 bg-emerald-500/5'
+                    : 'border-slate-700/60 focus:ring-slate-500/30 focus:border-slate-600'
+                }`}
+              />
+              {/* Match indicator */}
+              {confirmText !== '' && (
+                <div className={`mt-2 flex items-center gap-1.5 text-xs ${
+                  phraseMatch ? 'text-emerald-400' : 'text-slate-500'
+                }`}>
+                  {phraseMatch ? (
+                    <>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Frase correcta
+                    </>
+                  ) : (
+                    <span className="text-slate-600">La frase no coincide aún...</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Error message */}
+            {errorMsg && (
+              <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30">
+                <svg className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-xs text-rose-300">{errorMsg}</p>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => { setStep(1); setConfirmText(''); setErrorMsg(null); }}
+                disabled={isResetting}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-slate-700/60 text-slate-300 text-sm font-semibold hover:bg-slate-800 hover:border-slate-600 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ← Atrás
+              </button>
+              <button
+                onClick={() => resetMutation.mutate()}
+                disabled={!phraseMatch || isResetting}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold transition-all duration-200 shadow-lg shadow-rose-500/20"
+              >
+                {isResetting ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Reseteando...
+                  </>
+                ) : (
+                  'Confirmar reseteo'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   // ── Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -161,6 +428,9 @@ export default function ProfilePage() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // ── Season reset modal
+  const [resetModalOpen, setResetModalOpen] = useState(false);
 
   // ── Profile query
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -732,6 +1002,57 @@ export default function ProfilePage() {
           </div>
         </div>
       </SectionCard>
+
+      {/* ── SECCIÓN 4: Zona de peligro ────────────────────────────────── */}
+      <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/5 overflow-hidden">
+        {/* Header with red left accent */}
+        <div className="flex items-center gap-4 px-6 py-5 border-b border-rose-500/20">
+          <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
+            <span className="text-lg">⚠️</span>
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-rose-300">Zona de peligro</h2>
+            <p className="text-xs text-rose-400/60 mt-0.5">Acciones irreversibles — úsalas con precaución</p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-slate-200 mb-1">Resetear temporada</p>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Al terminar la temporada, puedes resetear todos los datos para empezar una nueva.
+              Esta acción{' '}
+              <span className="text-rose-400 font-semibold">NO se puede deshacer</span>.
+            </p>
+          </div>
+          <button
+            onClick={() => setResetModalOpen(true)}
+            className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-rose-600/80 hover:bg-rose-600 border border-rose-500/40 hover:border-rose-500/70 text-white text-sm font-semibold rounded-xl transition-all duration-200 shadow-lg shadow-rose-900/40"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Resetear temporada
+          </button>
+        </div>
+      </div>
+
+      {/* ── Season Reset Modal ──────────────────────────────────────────── */}
+      {resetModalOpen && (
+        <SeasonResetModal
+          onClose={() => setResetModalOpen(false)}
+          onSuccess={() => {
+            setResetModalOpen(false);
+            qc.invalidateQueries({ queryKey: ['events'] });
+            qc.invalidateQueries({ queryKey: ['abonados'] });
+            qc.invalidateQueries({ queryKey: ['tickets'] });
+            qc.invalidateQueries({ queryKey: ['profile'] });
+            showToast('Temporada reseteada correctamente');
+            navigate('/events');
+          }}
+        />
+      )}
 
       {/* Toast */}
       {toast && <Toast message={toast.message} type={toast.type} />}
